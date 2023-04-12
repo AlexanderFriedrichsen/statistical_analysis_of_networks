@@ -10,4 +10,7 @@ def objective_function(g, partition):
     for i,j,k in it.combinations(range(n),3):
         L += g.has_edge(i,j) * g.has_edge(i,k) * g.has_edge(k,j) * (partition[i] == partition[j] * partition[i]==partition[k])
     
-    
+    return L
+# clusim package for clustering
+
+objective_function(g, partition)
