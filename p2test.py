@@ -4,45 +4,69 @@ import ast
 import urllib.request
 import zipfile
 import matplotlib.pyplot as plt
+import random
+import numpy as np
 
-url = 'http://aaronclauset.github.io/data/MediciNetwork.zip'
-filename = 'MediciNetwork.zip'
+edges = pd.read_csv('padgett/edges.csv')
+nodes = pd.read_csv('padgett/nodes.csv')
+G = nx.from_pandas_edgelist(edges, source='source', target='target', edge_attr=True)
 
-# Download the file
-urllib.request.urlretrieve(url, filename)
+mapping = {0:'ACCIAIUOL', 1:'ALBIZZI', 2:'BARBADORI', 3:'BISCHERI', 4:'CASTELLAN', 5:'GINORI', 6:'GUADAGNI', 7:'LAMBERTES', 8:'MEDICI', 9:'PAZZI', 10:'PERUZZI', 11:'PUCCI', 12:'RIDOLFI', 13:'SALVIATI', 14:'STROZZI', 15:'TORNABUON'}
+G = nx.relabel_nodes(G, mapping)
+G.add_node('PUCCI')
+nx.draw(G, with_labels=True)
 
-# Extract the contents of the zip file
-with zipfile.ZipFile(filename, 'r') as zip_ref:
-    zip_ref.extractall('.')
+hc = nx.harmonic_centrality(G)
+hc  = {key: value / 14 for key, value in hc.items()}
+sorted(hc.items(), key=lambda x: x[1], reverse=True)
 
-file_name = 'Medici network/medici_network.txt'
+def initialize(degree_seq):
+    return nx.havel_hakimi_graph(degree_seq)
 
-edges=[]
-nodes =[]
-with open(file_name, 'r') as file:
-    for line in file:
-        node = int(line.split(' ')[0])
-        node_name = line.split(' ')[1].strip(',')
-        nodes.append((node,node_name))
-        l_ = line.split('[')[1]
-        l_ = l_[1:-2].replace(', ', ',').strip().split(' ')
-        for i in l_:
-            if i != '':
-                i = i.strip('(').strip(')').split(',')[0]
-                edges.append((node,int(i)))
+def pick_double_swap(G):
+    edges = list(G.edges())
 
-g = nx.Graph()
-for node in nodes:
-    g.add_node(node[0], label=node[1])
-for edge in edges:
-    g.add_edge(edge[0], edge[1])
+    edge1, edge2 = random.sample(edges, 2)  
 
-pos = nx.spring_layout(g, k=0.15, iterations=50)
-nx.draw(g, pos, with_labels=True, font_size=10, node_size=200, alpha=0.7, width=1, edge_color='grey', node_color='lightblue')
-labels = nx.get_node_attributes(g,'label')
-nx.draw_networkx_labels(g, pos, labels, font_size=8, font_weight='bold', alpha=0.8, bbox=dict(facecolor='white', edgecolor='none', boxstyle='round, pad=0.3'))
-edge_labels = nx.get_edge_attributes(g, 'weight')
-nx.draw_networkx_edge_labels(g, pos, edge_labels, font_size=8, label_pos=0.5, font_color='grey', alpha=0.8)
+    if len(set(edge1) & set(edge2)) > 0:
+        edge1, edge2 = random.sample(edges, 2)
 
-plt.tight_layout()
+    old_edges = [edge1, edge2]
+
+    swap_edge1 = sorted((edge1[0], edge2[1]))
+    swap_edge2 = sorted((edge1[1], edge2[0]))
+
+    swap_edges = [(swap_edge1[0], swap_edge1[1]), (swap_edge2[0], swap_edge2[1])]
+    return old_edges, swap_edges
+    
+def apply_swap(G, old_edges, swap_edges):
+    if set(swap_edges).isdisjoint(G.edges()):
+        G.remove_edges_from(old_edges)
+        G.add_edges_from(swap_edges)
+
+def MCMC(degree_seq):
+    G = initialize(degree_seq)
+    for _ in range(100):
+        swap_edges, new_edges = pick_double_swap(G)
+        apply_swap(G, swap_edges, new_edges)
+    return G
+
+degree_sequence = np.array([d for n, d in G.degree()])
+mapping = {'ACCIAIUOL': 0, 'ALBIZZI': 1, 'BARBADORI': 2, 'BISCHERI': 3, 'CASTELLAN': 4, 'GINORI': 5, 'GUADAGNI': 6, 'LAMBERTES': 7, 'MEDICI': 8, 'PAZZI': 9, 'PERUZZI': 10, 'PUCCI': 11, 'RIDOLFI': 12, 'SALVIATI': 13, 'STROZZI': 14, 'TORNABUON': 15}
+all_hcs = []
+for i in range(1000):
+    temp_G = MCMC(degree_sequence)
+    hcs = nx.harmonic_centrality(temp_G, mapping)
+
+    hcs  = {key: (value / 14) for key, value in hc.items()}
+
+    all_hcs.append(hcs)
+family_centrality_dists = {family:[] for family in mapping.values()}
+for hc in all_hcs:
+    for family, val in hc.items():
+        family_centrality_dists[family].append(val)
+
+fig, ax = plt.subplots()
+ax.boxplot(family_centrality_dists.values())
+ax.set_xticklabels(family_centrality_dists.keys())
 plt.show()
